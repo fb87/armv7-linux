@@ -19,7 +19,9 @@ output/initrd.cpio.gz.uboot: output/lichee
 	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox/_install armhf-builder /bin/bash -c \
 		"rm -Rf initrd* etc && \
 		cp -Rf ../lichee/lib . && \
-		mkdir -p etc/init.d proc sys && ln -s /bin/busybox etc/init.d/rcS && \
+		mkdir -p etc/init.d proc sys && \
+		echo 'mount -t proc  none /proc && mount -t sysfs none /sys && mdev -s' > etc/init.d/rcS && \
+		chmod +x etc/init.d/rcS && \
 		find . | cpio --quiet -H newc -o | gzip -9 -n > /tmp/initrd.cpio.gz && \
 		mkimage -A arm -O linux -T ramdisk -C gzip -d /tmp/initrd.cpio.gz ../initrd.cpio.gz.uboot"
 
