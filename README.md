@@ -1,24 +1,19 @@
 # RADME
 
-## Inputs
-
-* [Linux Kernel](https://github.com/Lichee-Pi/linux) - branch `zero-5.2.y`
-* [U-Boot](git://git.denx.de/u-boot-sunxi.git)
-* [Busybox](https://github.com/mirror/busybox) - tag `1_36_0`
-
 ## Host env. preparation
 
-* Install either `Docker` or `Podman` plus `gnumake` for building
+* Install either `Docker` or `Podman` plus `gnumake`, `u-boot-tools` for building
 * Install `sunxi-tools` for flashing
 
 ## Build procedures
 
-* Apply patch `disable-backlight-control.patch`
-* Simply hit `make`
+* Runt `git submodule update --init` in case you have not clone with `--recursive`
+* Simply hit `make all` to build everything
 
 ## Booting
 
 * Boot using [sunxi-fel](https://linux-sunxi.org/FEL/USBBoot)
+* Hit `make boot` to boot target using `FEL` via USB-OTG
 
 Lichee Zero boots with RAM base at `0x40000000`, check [here](https://source.denx.de/u-boot/u-boot/blob/master/include/configs/sunxi-common.h)
 
@@ -57,13 +52,4 @@ sunxi-fel -v uboot output/u-boot-sunxi-with-spl.bin \
 
 ```
 
-Mount sysfs & procfs if not yet done (Error message such as `can't open /dev/tty3: No such file or directory` will be output continously)
-
-```
-mkdir -p /sys /proc
-
-mount -t proc  none /proc && mount -t sysfs none /sys && mdev -s
-```
-
-LCD backlight control is not working on attached LCD, remove.
 

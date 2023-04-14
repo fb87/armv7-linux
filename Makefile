@@ -1,64 +1,81 @@
-all: builder target
+OBJ_DIR       ?= /tmp/lichee-build
+BIN_DIR       ?= ${shell pwd}/bin
+SRC_DIR       ?= ${shell pwd}/src
 
-builder:
-	@docker build -t armhf-builder .
+JOBS          ?= 8 # more jobs might cause error due to resource limiting
 
-output:
-	@rm -Rf $@ && mkdir -p $@
+PRE_BUILD     ?= mkdir -p ${OBJ_DIR} ${BIN_DIR} && ulimit -Sn unlimited && ulimit -Sl unlimited
+BUILD_CMD     ?= ${PRE_BUILD} && docker run --rm -it \
+                -v ${OBJ_DIR}:/obj_dir \
+                -v ${SRC_DIR}:/src_dir \
+                -v ${BIN_DIR}:/bin_dir \
+                armhf-builder
+MAKE_FLAGS    ?= ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- 
+MAKE_CMD      := ${BUILD_CMD} make ${MAKE_FLAGS} -j${JOBS}
+BASH_CMD      := ${BUILD_CMD} /bin/bash -c
 
-target: output output/uImage output/u-boot.bin output/initrd.cpio.gz.uboot
-	@cp -Rf src/busybox/{.config,busybox,initrd.cpio.gz.uboot} output
-	@echo "-Output Artifacts------------------------------------"
-	@ls -al output
+all: bootable
+	@echo "---Output artifact ${BIN_DIR}---"
+	@ls -al ${BIN_DIR}
 
-output/initrd.cpio.gz.uboot: output/lichee
-	@cp -Rf output/lichee   ${PWD}/src/busybox # make the modules visible to initrd
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox armhf-builder make defconfig
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox armhf-builder /bin/bash -c "echo CONFIG_STATIC=y >> .config"
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox armhf-builder make install
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox/_install armhf-builder /bin/bash -c \
-		"rm -Rf initrd* etc && \
-		cp -Rf ../lichee/lib . && \
-		mkdir -p etc/init.d proc sys && \
-		echo 'mount -t proc  none /proc && mount -t sysfs none /sys && mdev -s' > etc/init.d/rcS && \
-		chmod +x etc/init.d/rcS && \
-		find . | cpio --quiet -H newc -o | gzip -9 -n > /tmp/initrd.cpio.gz && \
-		mkimage -A arm -O linux -T ramdisk -C gzip -d /tmp/initrd.cpio.gz ../initrd.cpio.gz.uboot"
+bootable: linux initrd.cpio.gz.uboot boot.scr
 
-output/u-boot.bin: output
-	@docker run --rm -it -v ${PWD}/src:/work armhf-builder make -C /work/u-boot LicheePi_Zero_defconfig
-	@docker run --rm -it -v ${PWD}/src:/work armhf-builder make -C /work/u-boot -j$(nproc)
-	@cp -f src/u-boot/*.bin output
-	@cp -f src/u-boot/.config output/u-boot.config
+u-boot:
+	@mkdir -p ${OBJ_DIR}/$@
+	# build u-boot images
+	@${MAKE_CMD} -C /src_dir/$@ LicheePi_Zero_defconfig all -j$(nproc)
+	# sync images to output folder
+	@${BASH_CMD} "cp -f /src_dir/$@/.config /obj_dir/$@"
+	@${BASH_CMD} "cp -f /src_dir/$@/*.bin 	/bin_dir/"
 
-output/uImage: output
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/linux armhf-builder make licheepi_zero_defconfig
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/linux armhf-builder make uImage LOADADDR=0x40008000 -j$(nproc)
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/linux armhf-builder make modules dtbs -j$(nproc)
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/linux armhf-builder make modules_install INSTALL_MOD_PATH=./lichee
-	@cp -f src/linux/arch/arm/boot/*Image src/linux/vmlinux src/linux/.config output
-	@cp -f src/linux/.config output/linux.config
-	@cp -f src/linux/arch/arm/boot/dts/sun8i-v3s-licheepi-zero*dtb output
-	@cp -Rf src/linux/lichee output/
+linux:
+	@mkdir -p ${OBJ_DIR}/$@
+	# build linux images
+	# FIXME: patch might be done before, error will be skip for now, not nice
+	@${BASH_CMD} "(cd /src_dir/$@; patch -fN -p 1 < /src_dir/patches/0001.linux.disable-backlight-control.patch||true)"
+	@${MAKE_CMD} -C /src_dir/$@ LOADADDR=0x40008000 INSTALL_MOD_PATH=/obj_dir/$@ licheepi_zero_defconfig uImage dtbs modules modules_install
+	# sync images to output folder
+	@${BASH_CMD} "cp -f /src_dir/$@/{arch/arm/boot/*Image,arch/arm/boot/dts/sun8i-v3s-licheepi-zero*dtb} /bin_dir/"
+	@${BASH_CMD} "mkdir -p /obj_dir/$@ && cp -Rf /src_dir/$@/{lib,.config} /obj_dir/$@"
 
-output/boot.scr:
-	@docker run --rm -it -v ${PWD}/src:/work -w /work/busybox armhf-builder /bin/bash -c \
-	"echo setenv bootargs console=ttyS0,115200 root=/dev/ram0 rdinit=/sbin/init rootdelay=2 loglevel=7 > boot.cmd && \
-	echo setenv bootcmd bootm 0x41000000 0x41c00000 0x41800000 >> boot.cmd && \
-	echo run bootcmd >> boot.cmd && \
-	mkimage -C none -A arm -T script -d boot.cmd boot.scr"
-	@cp ${PWD}/src/busybox/boot.scr output
+busybox:
+	# build images
+	@${MAKE_CMD} -C /src_dir/$@ CONFIG_STATIC=y defconfig 
+	@${MAKE_CMD} -C /src_dir/$@ CONFIG_STATIC=y install
+	# sync images to output folder
+	@${BASH_CMD} "mkdir -p /obj_dir/$@ && cp -Rf /src_dir/$@/_install/* /obj_dir/$@"
 
-boot: output/boot.scr
-	@sudo sunxi-fel -v uboot output/u-boot-sunxi-with-spl.bin \
-             write 0x41000000 output/uImage \
-             write 0x41800000 output/sun8i-v3s-licheepi-zero-with-800x480-lcd.dtb \
-             write 0x4fc00000 output/boot.scr \
-             write 0x41C00000 output/initrd.cpio.gz.uboot
+overlay: busybox
+	@mkdir -p ${OBJ_DIR}/$</etc/init.d
+	@echo -ne '#!/bin/sh\n\n' > ${OBJ_DIR}/$</etc/init.d/rcS
+	@echo -ne 'mount -t proc  none /proc\nmount -t sysfs none /sys\n\nmdev -s' >> ${OBJ_DIR}/$</etc/init.d/rcS
+	@chmod +x ${OBJ_DIR}/$</etc/init.d/rcS
+
+initrd.cpio.gz.uboot: overlay linux busybox u-boot 
+	@mkdir -p ${OBJ_DIR}/$@
+	(cd ${OBJ_DIR}/$@; rm -Rf * && mkdir -p proc dev sys)
+	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/linux/lib .)
+	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/busybox/* .)
+	(cd ${OBJ_DIR}/$@; find . | cpio --quiet -H newc -o | gzip -9 -n > ${OBJ_DIR}/initrd.cpio.gz)
+	(cd ${OBJ_DIR}/$@; mkimage -A arm -O linux -T ramdisk -C gzip -d ${OBJ_DIR}/initrd.cpio.gz ${BIN_DIR}/initrd.cpio.gz.uboot)
+
+boot.scr: ${OBJ_DIR}/u-boot
+	(cd $<; echo 'setenv bootargs console=ttyS0,115200 root=/dev/ram0 rdinit=/sbin/init rootdelay=2 loglevel=7' > boot.cmd)
+	(cd $<; echo setenv bootcmd bootm 0x41000000 0x41c00000 0x41800000 >> boot.cmd)
+	(cd $<; echo run bootcmd >> boot.cmd)
+	(cd $<; mkimage -C none -A arm -T script -d boot.cmd ${BIN_DIR}/boot.scr)
+
+boot: boot.scr
+	@sudo sunxi-fel -v uboot    ${BIN_DIR}/u-boot-sunxi-with-spl.bin \
+             write 0x41000000 ${BIN_DIR}/uImage \
+             write 0x41800000 ${BIN_DIR}/sun8i-v3s-licheepi-zero-with-800x480-lcd.dtb \
+             write 0x4fc00000 ${BIN_DIR}/boot.scr \
+             write 0x41C00000 ${BIN_DIR}/initrd.cpio.gz.uboot
 
 distclean: clean
-	@make -C src/linux distclean
-	@make -C src/u-boot distclean
+	@${MAKE_CMD} -C /src_dir/linux distclean
+	@${MAKE_CMD} -C /src_dir/u-boot distclean
+	@${MAKE_CMD} -C /src_dir/busybox distclean
 
 clean:
-	@rm -Rf output
+	@rm -Rf ${BIN_DIR} ${OBJ_DIR}
