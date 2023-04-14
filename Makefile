@@ -4,7 +4,7 @@ SRC_DIR       ?= ${shell pwd}/src
 
 JOBS          ?= 8 # more jobs might cause error due to resource limiting
 
-PRE_BUILD     ?= mkdir -p ${OBJ_DIR} ${BIN_DIR} && ulimit -Sn unlimited && ulimit -Sl unlimited
+PRE_BUILD     ?= mkdir -p ${OBJ_DIR} ${BIN_DIR}
 BUILD_CMD     ?= ${PRE_BUILD} && docker run --rm -it \
                 -v ${OBJ_DIR}:/obj_dir \
                 -v ${SRC_DIR}:/src_dir \
@@ -14,11 +14,19 @@ MAKE_FLAGS    ?= ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
 MAKE_CMD      := ${BUILD_CMD} make ${MAKE_FLAGS} -j${JOBS}
 BASH_CMD      := ${BUILD_CMD} /bin/bash -c
 
-all: bootable
+
+all: builder bootable usr.bin
 	@echo "---Output artifact ${BIN_DIR}---"
 	@ls -al ${BIN_DIR}
 
+builder:
+	docker build -t armhf-builder .
+
 bootable: linux initrd.cpio.gz.uboot boot.scr
+
+usr.bin:
+	${BASH_CMD} "mkdir -p /obj_dir/$@"
+	${MAKE_CMD} -C /src_dir/$@
 
 u-boot:
 	@mkdir -p ${OBJ_DIR}/$@
@@ -51,11 +59,12 @@ overlay: busybox
 	@echo -ne 'mount -t proc  none /proc\nmount -t sysfs none /sys\n\nmdev -s' >> ${OBJ_DIR}/$</etc/init.d/rcS
 	@chmod +x ${OBJ_DIR}/$</etc/init.d/rcS
 
-initrd.cpio.gz.uboot: overlay linux busybox u-boot 
+initrd.cpio.gz.uboot: overlay linux busybox u-boot usr.bin
 	@mkdir -p ${OBJ_DIR}/$@
-	(cd ${OBJ_DIR}/$@; rm -Rf * && mkdir -p proc dev sys)
+	(cd ${OBJ_DIR}/$@; rm -Rf * && mkdir -p proc dev sys usr/local/bin)
 	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/linux/lib .)
 	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/busybox/* .)
+	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/usr.bin/* usr/local/bin/)
 	(cd ${OBJ_DIR}/$@; find . | cpio --quiet -H newc -o | gzip -9 -n > ${OBJ_DIR}/initrd.cpio.gz)
 	(cd ${OBJ_DIR}/$@; mkimage -A arm -O linux -T ramdisk -C gzip -d ${OBJ_DIR}/initrd.cpio.gz ${BIN_DIR}/initrd.cpio.gz.uboot)
 
