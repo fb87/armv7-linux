@@ -1,0 +1,18 @@
+[submodule "src/u-boot"]
+	path = src/u-boot
+	url = git://git.denx.de/u-boot-sunxi.git
+[submodule "src/busybox"]
+	path = src/busybox
+	url = https://github.com/mirror/busybox
+	branch = 1_36_0
+[submodule "src/usr.bin/lib/lvgl"]
+	path = src/usr.bin/lib/lvgl
+	url = https://github.com/lvgl/lvgl
+	branch = v8.3.6
+[submodule "src/usr.bin/lib/lv_driver"]
+	path = src/usr.bin/lib/lv_driver
+	url = https://github.com/lvgl/lv_drivers.git
+[submodule "src/linux"]
+	path = src/linux
+	url = https://github.com/Lichee-Pi/linux
+	branch = zero-5.2.y
