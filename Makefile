@@ -1,11 +1,11 @@
-OBJ_DIR       ?= /tmp/lichee-build
+OBJ_DIR       ?= /tmp/opi0-build
 BIN_DIR       ?= ${shell pwd}/bin
 SRC_DIR       ?= ${shell pwd}/src
 
 JOBS          ?= 8 # more jobs might cause error due to resource limiting
 
 PRE_BUILD     ?= mkdir -p ${OBJ_DIR} ${BIN_DIR}
-BUILD_CMD     ?= ${PRE_BUILD} && docker run --rm -it \
+BUILD_CMD     ?= ${PRE_BUILD} && podman run --rm -it \
                 -v ${OBJ_DIR}:/obj_dir \
                 -v ${SRC_DIR}:/src_dir \
                 -v ${BIN_DIR}:/bin_dir \
@@ -20,7 +20,7 @@ all: builder bootable usr.bin
 	@ls -al ${BIN_DIR}
 
 builder:
-	docker build -t armhf-builder .
+	podman build -t armhf-builder .
 
 bootable: linux initrd.cpio.gz.uboot boot.scr
 
@@ -31,7 +31,7 @@ usr.bin:
 u-boot:
 	@mkdir -p ${OBJ_DIR}/$@
 	# build u-boot images
-	@${MAKE_CMD} -C /src_dir/$@ LicheePi_Zero_defconfig all -j$(nproc)
+	@${MAKE_CMD} -C /src_dir/$@ orangepi_zero_defconfig all -j$(nproc)
 	# sync images to output folder
 	@${BASH_CMD} "cp -f /src_dir/$@/.config /obj_dir/$@"
 	@${BASH_CMD} "cp -f /src_dir/$@/*.bin 	/bin_dir/"
@@ -39,11 +39,9 @@ u-boot:
 linux:
 	@mkdir -p ${OBJ_DIR}/$@
 	# build linux images
-	# FIXME: patch might be done before, error will be skip for now, not nice
-	@${BASH_CMD} "(cd /src_dir/$@; patch -fN -p 1 < /src_dir/patches/0001.linux.disable-backlight-control.patch||true)"
-	@${MAKE_CMD} -C /src_dir/$@ LOADADDR=0x40008000 INSTALL_MOD_PATH=/obj_dir/$@ licheepi_zero_defconfig uImage dtbs modules modules_install
+	@${MAKE_CMD} -C /src_dir/$@ LOADADDR=0x40008000 INSTALL_MOD_PATH=/obj_dir/$@ sunxi_defconfig uImage dtbs modules modules_install
 	# sync images to output folder
-	@${BASH_CMD} "cp -f /src_dir/$@/{arch/arm/boot/*Image,arch/arm/boot/dts/sun8i-v3s-licheepi-zero*dtb} /bin_dir/"
+	@${BASH_CMD} "cp -f /src_dir/$@/{arch/arm/boot/*Image,arch/arm/boot/dts/allwinner/sun8i-h3-orangepi-zero-plus2.dtb} /bin_dir/"
 	@${BASH_CMD} "mkdir -p /obj_dir/$@ && cp -Rf /src_dir/$@/{lib,.config} /obj_dir/$@"
 
 busybox:
@@ -77,7 +75,7 @@ boot.scr: ${OBJ_DIR}/u-boot
 boot: boot.scr
 	@sudo sunxi-fel -v uboot    ${BIN_DIR}/u-boot-sunxi-with-spl.bin \
              write 0x41000000 ${BIN_DIR}/uImage \
-             write 0x41800000 ${BIN_DIR}/sun8i-v3s-licheepi-zero-with-800x480-lcd.dtb \
+             write 0x41800000 ${BIN_DIR}/sun8i-h3-orangepi-zero-plus2.dtb \
              write 0x4fc00000 ${BIN_DIR}/boot.scr \
              write 0x41C00000 ${BIN_DIR}/initrd.cpio.gz.uboot
 

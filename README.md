@@ -15,7 +15,7 @@
 * Boot using [sunxi-fel](https://linux-sunxi.org/FEL/USBBoot)
 * Hit `make boot` to boot target using `FEL` via USB-OTG
 
-Lichee Zero boots with RAM base at `0x40000000`, check [here](https://source.denx.de/u-boot/u-boot/blob/master/include/configs/sunxi-common.h)
+Orangepi Zero boots with RAM base at `0x40000000`, check [here](https://source.denx.de/u-boot/u-boot/blob/master/include/configs/sunxi-common.h)
 
 ```c
 #define SDRAM_OFFSET(x) 0x4##x
@@ -44,12 +44,9 @@ Lichee Zero boots with RAM base at `0x40000000`, check [here](https://source.den
 Boot commands:
 
 ```
-sunxi-fel -v uboot output/u-boot-sunxi-with-spl.bin \
-▏  write 0x41000000 output/uImage \
-▏  write 0x41800000 output/sun8i-v3s-licheepi-zero.dtb \
-▏  write 0x4fc00000 output/boot.scr \
-▏  write 0x41C00000 output/initrd.cpio.gz.uboot
-
+make boot
 ```
+
+**Note**: the host tool need to be install `u-boot-tools` and `sunxi-tools`. For Nix user: `nix-shell -p ubootTools sunxi-tools`.
 
 
