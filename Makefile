@@ -14,15 +14,17 @@ MAKE_FLAGS    ?= ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf-
 MAKE_CMD      := ${BUILD_CMD} make ${MAKE_FLAGS} -j${JOBS}
 BASH_CMD      := ${BUILD_CMD} /bin/bash -c
 
-
-all: builder bootable
+all: bootable
 	@echo "---Output artifact ${BIN_DIR}---"
 	@ls -al ${BIN_DIR}
 
 builder:
 	podman build -t armhf-builder .
 
-bootable: linux initrd.cpio.gz.uboot boot.scr
+prepare:
+	mkdir src -p
+
+bootable: builder prepare linux initrd.cpio.gz.uboot boot.scr
 
 src/linux.tar.gz:
 	@curl -L -o $@ https://github.com/torvalds/linux/archive/refs/tags/v6.5.tar.gz
@@ -52,7 +54,7 @@ linux: src/linux.tar.gz
 	# build linux images
 	@${MAKE_CMD} -C /src_dir/$@ LOADADDR=0x40008000 INSTALL_MOD_PATH=/obj_dir/$@ sunxi_defconfig uImage dtbs modules modules_install
 	# sync images to output folder
-	@${BASH_CMD} "cp -f /src_dir/$@/{arch/arm/boot/*Image,arch/arm/boot/dts/allwinner/sun8i-h3-orangepi-zero-plus2.dtb} /bin_dir/"
+	@${BASH_CMD} "cp -f /src_dir/$@/{arch/arm/boot/*Image,arch/arm/boot/dts/allwinner/sun8i-h3-orangepi-pc.dtb} /bin_dir/"
 	@${BASH_CMD} "mkdir -p /obj_dir/$@ && cp -Rf /src_dir/$@/{lib,.config} /obj_dir/$@"
 
 busybox: src/busybox.tar.gz
@@ -69,6 +71,7 @@ overlay: busybox
 	@chmod +x ${OBJ_DIR}/$</etc/init.d/rcS
 
 initrd.cpio.gz.uboot: overlay linux busybox u-boot
+	@rm -Rf ${OBJ_DIR}/$@
 	@mkdir -p ${OBJ_DIR}/$@
 	(cd ${OBJ_DIR}/$@; rm -Rf * && mkdir -p proc dev sys usr/local/bin)
 	(cd ${OBJ_DIR}/$@; cp -Rf ${OBJ_DIR}/linux/lib .)
@@ -85,7 +88,7 @@ boot.scr: ${OBJ_DIR}/u-boot
 boot: boot.scr
 	@sudo sunxi-fel -v uboot    ${BIN_DIR}/u-boot-sunxi-with-spl.bin \
              write 0x41000000 ${BIN_DIR}/uImage \
-             write 0x41800000 ${BIN_DIR}/sun8i-h3-orangepi-zero-plus2.dtb \
+             write 0x41800000 ${BIN_DIR}/sun8i-h3-orangepi-pc.dtb \
              write 0x4fc00000 ${BIN_DIR}/boot.scr \
              write 0x41C00000 ${BIN_DIR}/initrd.cpio.gz.uboot
 

@@ -49,4 +49,25 @@ make boot
 
 **Note**: the host tool need to be install `u-boot-tools` and `sunxi-tools`. For Nix user: `nix-shell -p ubootTools sunxi-tools`.
 
+## Setting networking
+
+Busybox not setting up the network by default, need to bring it up by creating
+`/etc/network/interfaces` and setting the default gateway using e.g `ip route add default via 192.168.0.1 dev eth0`. `iface eth0 inet dhcp` should also work.
+
+Also `ifup eth0` would do the trick.
+
+```shell
+~ # ip route add default via 192.168.0.1 dev eth0
+ip: RTNETLINK answers: File exists
+~ # cat /etc/network/interfaces 
+auto lo
+
+auto eth0
+iface eth0 inet static
+    address 192.168.0.50
+    netmask 255.255.255.0
+    network 192.168.0.1
+~ #
+```
+
 
